@@ -63,7 +63,7 @@ body::before {
 .container {
   max-width: 1000px;
   margin: 0 auto;
-  padding: 0 24px;
+  padding: 0 24px 100px;
 }
 
 header {
@@ -1826,12 +1826,18 @@ header {
 }
 
 .footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 24px;
   padding: 24px;
-  margin-top: 32px;
+  background: var(--bg);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  z-index: 10;
 }
 
 .discord-btn {

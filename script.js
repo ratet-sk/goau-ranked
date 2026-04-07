@@ -5,7 +5,6 @@ const errorMessage = document.getElementById('error-message');
 const resultsSection = document.getElementById('results-section');
 const globalMatchesSection = document.getElementById('global-matches-section');
 const globalMatchesList = document.getElementById('global-matches-list');
-const globalHistoryBtn = document.getElementById('global-history-btn');
 const liveMatchSection = document.getElementById('live-match-section');
 const liveMatchContent = document.getElementById('live-match-content');
 const liveMatchTitle = document.getElementById('live-match-title');
@@ -228,7 +227,6 @@ document.getElementById('history-modal-overlay').addEventListener('click', close
 document.getElementById('history-modal-close').addEventListener('click', closeHistoryModal);
 
 document.getElementById('view-all-matches-btn').addEventListener('click', openHistoryModal);
-globalHistoryBtn.addEventListener('click', openHistoryModal);
 
 async function loadGlobalMatches() {
   console.log('Loading global matches...');
@@ -872,7 +870,6 @@ async function handleSearch(input) {
   setLoading(true);
   resultsSection.classList.add('fade-out');
   globalMatchesSection.classList.add('hidden');
-  globalHistoryBtn.classList.add('hidden');
   currentMatchOffset = 0;
 
   try {
@@ -897,7 +894,6 @@ async function handleSearch(input) {
     resultsSection.classList.remove('fade-out');
 
     resultsSection.classList.add('visible');
-    globalHistoryBtn.classList.remove('hidden');
     
     renderPlayerCard(data, steamInfo.avatar, steamInfo.faceitLevel);
     renderStats(data);
@@ -912,7 +908,6 @@ async function handleSearch(input) {
     resultsSection.classList.remove('visible');
     resultsSection.classList.remove('fade-out');
     globalMatchesSection.classList.remove('hidden');
-    globalHistoryBtn.classList.add('hidden');
   } finally {
     setLoading(false);
   }
@@ -927,7 +922,6 @@ form.addEventListener('submit', (e) => {
     resultsSection.classList.remove('visible');
     resultsSection.classList.remove('fade-out');
     globalMatchesSection.classList.remove('hidden');
-    globalHistoryBtn.classList.add('hidden');
   }
 });
 
@@ -996,5 +990,4 @@ document.getElementById('logo-btn').addEventListener('click', () => {
   resultsSection.classList.remove('visible');
   resultsSection.classList.remove('fade-out');
   globalMatchesSection.classList.remove('hidden');
-  globalHistoryBtn.classList.add('hidden');
 });
