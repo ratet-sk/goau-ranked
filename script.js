@@ -229,14 +229,10 @@ document.getElementById('history-modal-close').addEventListener('click', closeHi
 document.getElementById('view-all-matches-btn').addEventListener('click', openHistoryModal);
 
 async function loadGlobalMatches() {
-  console.log('Loading global matches...');
   try {
-    console.log('Fetching matches...');
     const res = await fetch('https://backend.hzqki.me/api/matches?limit=10');
-    console.log('Got response:', res);
     if (!res.ok) throw new Error('Failed to load');
     const matches = await res.json();
-    console.log('Got matches:', matches);
     
     if (matches.length === 0) {
       globalMatchesList.innerHTML = '<div class="global-matches-loading">No matches found</div>';
@@ -268,7 +264,6 @@ async function loadGlobalMatches() {
     });
     
   } catch (e) {
-    console.error('Error loading matches:', e);
     globalMatchesList.innerHTML = '<div class="global-matches-loading">Failed to load matches: ' + e.message + '</div>';
   }
 }
@@ -771,16 +766,37 @@ function calculateHltvRating(data) {
   const matches = data.matches_played || 1;
   const hsKills = data.hs_kills || 0;
   
-  if (kills === 0) return 0.00;
+  if (kills === 0) return { rating: 0, details: null };
   
   const rounds = matches * 30;
   const adr = damage / rounds;
   const hsRate = hsKills / kills;
   const kdRatio = kills / deaths;
   
-  const rating = (kills * 0.005) + (kdRatio * 0.3) + (adr * 0.003) + (hsRate * 0.1);
+  const killPart = kills * 0.005;
+  const kdPart = kdRatio * 0.3;
+  const adrPart = adr * 0.003;
+  const hsPart = hsRate * 0.1;
   
-  return rating;
+  const rating = killPart + kdPart + adrPart + hsPart;
+  
+  return {
+    rating,
+    details: {
+      kills,
+      deaths,
+      kdRatio: kdRatio.toFixed(2),
+      adr: adr.toFixed(1),
+      hsRate: (hsRate * 100).toFixed(1),
+      rounds,
+      parts: {
+        kills: killPart.toFixed(2),
+        kd: kdPart.toFixed(2),
+        adr: adrPart.toFixed(2),
+        hs: hsPart.toFixed(2)
+      }
+    }
+  };
 }
 
 function renderPlayerCard(data, avatarUrl, faceitLevel) {
@@ -894,6 +910,7 @@ async function handleSearch(input) {
     resultsSection.classList.remove('fade-out');
 
     resultsSection.classList.add('visible');
+    window.currentPlayerData = data;
     
     renderPlayerCard(data, steamInfo.avatar, steamInfo.faceitLevel);
     renderStats(data);
@@ -990,4 +1007,172 @@ document.getElementById('logo-btn').addEventListener('click', () => {
   resultsSection.classList.remove('visible');
   resultsSection.classList.remove('fade-out');
   globalMatchesSection.classList.remove('hidden');
+});
+
+const statsModal = document.getElementById('stats-modal');
+const statsModalOverlay = document.getElementById('stats-modal-overlay');
+const statsModalClose = document.getElementById('stats-modal-close');
+
+statsModalClose.addEventListener('click', () => statsModal.classList.remove('visible'));
+statsModalOverlay.addEventListener('click', () => statsModal.classList.remove('visible'));
+
+document.getElementById('hltv-tooltip').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const formula = e.currentTarget.dataset.formula;
+  navigator.clipboard.writeText(formula);
+  const textEl = e.currentTarget.querySelector('.tooltip-text');
+  const originalText = textEl.innerHTML;
+  textEl.innerHTML = 'Copied!';
+  setTimeout(() => textEl.innerHTML = originalText, 1500);
+});
+
+document.getElementById('flux-tooltip').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const formula = e.currentTarget.dataset.formula;
+  navigator.clipboard.writeText(formula);
+  const textEl = e.currentTarget.querySelector('.tooltip-text');
+  const originalText = textEl.innerHTML;
+  textEl.innerHTML = 'Copied!';
+  setTimeout(() => textEl.innerHTML = originalText, 1500);
+});
+
+async function calculateFluxElo(steamId) {
+  try {
+    document.getElementById('flux-elo-details').innerHTML = '<div style="padding: 20px;">Calculating...</div>';
+    document.getElementById('modal-flux-elo').textContent = '-';
+    
+    const res = await fetchWithTimeout(`https://backend.hzqki.me/api/player-matches?steam_id=${encodeURIComponent(steamId)}&limit=50`);
+    if (!res.ok) throw new Error('Failed');
+    const matches = await res.json();
+    
+    if (!matches || matches.length === 0) {
+      document.getElementById('modal-flux-elo').textContent = 'N/A';
+      document.getElementById('flux-elo-details').innerHTML = 'No matches found';
+      return;
+    }
+    
+    let totalFluxElo = 0;
+    let matchesWithData = 0;
+    let totalWins = 0;
+    let totalLosses = 0;
+    let totalBonus = 0;
+    let allKills = 0;
+    let allDeaths = 0;
+    let assumedEloCount = 0;
+    let knownEloCount = 0;
+    
+    const playerMap = new Map();
+    playerMap.set(steamId.toLowerCase(), { elo: 1000 });
+    
+    for (let i = 0; i < Math.min(5, matches.length); i++) {
+      const match = matches[i];
+      try {
+        const res = await fetchWithTimeout(`https://backend.hzqki.me/api/matches/${match.match_id}`, 5000);
+        if (res.ok) {
+          const details = await res.json();
+          if (details.players) {
+            for (const p of details.players) {
+              if (p.steam_id && p.steam_id.toLowerCase() !== steamId.toLowerCase()) {
+                const kd = p.kills && p.deaths ? p.kills / p.deaths : 1;
+                const elo = 800 + (kd * 200);
+                playerMap.set(p.steam_id.toLowerCase(), { elo, kd });
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+    
+    for (const match of matches) {
+      allKills += match.kills || 0;
+      allDeaths += match.deaths || 0;
+    }
+    
+    const lobbyAvgKD = allDeaths > 0 ? allKills / allDeaths : 1;
+    
+    for (let i = 0; i < matches.length; i++) {
+      const match = matches[i];
+      const playerKills = match.kills || 0;
+      const playerDeaths = match.deaths || 0;
+      const playerKD = playerDeaths > 0 ? playerKills / playerDeaths : (playerKills || 1);
+      
+      const P = lobbyAvgKD > 0 ? playerKD / lobbyAvgKD : 1;
+      const isWinner = match.result === 'W';
+      
+      if (isWinner) totalWins++;
+      else totalLosses++;
+      
+      let E_Base = isWinner ? 350 : -350;
+      let O = 0;
+      if (playerKD > 1.75) {
+        O = 100;
+        totalBonus++;
+      }
+      
+      let deltaElo = E_Base;
+      if (isWinner) {
+        deltaElo = E_Base * P;
+      } else {
+        deltaElo = E_Base * (2 - P);
+      }
+      deltaElo += O;
+      
+      totalFluxElo += deltaElo;
+      matchesWithData++;
+      
+      assumedEloCount++;
+    }
+    
+    const finalElo = Math.round(totalFluxElo);
+    document.getElementById('modal-flux-elo').textContent = finalElo.toLocaleString();
+    document.getElementById('flux-elo-details').textContent = `${matchesWithData} matches | ${totalWins}W/${totalLosses}L | Avg KD: ${lobbyAvgKD.toFixed(2)}`;
+    
+  } catch (e) {
+    console.error('Flux Elo error:', e);
+    document.getElementById('modal-flux-elo').textContent = 'N/A';
+    document.getElementById('flux-elo-details').innerHTML = 'Error: ' + e.message;
+  }
+}
+
+let fluxyClicks = [];
+const FLUXY_CLICKS_NEEDED = 5;
+const FLUXY_TIME_WINDOW = 2000;
+const creditsEl = document.getElementById('credits');
+
+creditsEl.addEventListener('click', () => {
+  if (!resultsSection.classList.contains('visible')) return;
+  
+  const now = Date.now();
+  fluxyClicks = fluxyClicks.filter(t => now - t < FLUXY_TIME_WINDOW);
+  fluxyClicks.push(now);
+
+  if (fluxyClicks.length >= FLUXY_CLICKS_NEEDED) {
+    fluxyClicks = [];
+    const playerData = window.currentPlayerData;
+    if (playerData) {
+      const hltvResult = calculateHltvRating(playerData);
+      document.getElementById('modal-hltv').textContent = hltvResult.rating.toFixed(2);
+      
+      let formulaHtml = '';
+      if (hltvResult.details) {
+        const d = hltvResult.details;
+        formulaHtml = `
+          <div class="formula-breakdown">
+            <div class="formula-row"><span class="formula-label">Kills:</span> <span class="formula-calc">${d.kills} × 0.005 = ${d.parts.kills}</span></div>
+            <div class="formula-row"><span class="formula-label">K/D:</span> <span class="formula-calc">${d.kdRatio} × 0.3 = ${d.parts.kd}</span></div>
+            <div class="formula-row"><span class="formula-label">ADR:</span> <span class="formula-calc">${d.adr} × 0.003 = ${d.parts.adr}</span></div>
+            <div class="formula-row"><span class="formula-label">HS%:</span> <span class="formula-calc">${d.hsRate}% × 0.1 = ${d.parts.hs}</span></div>
+            <div class="formula-total">Total: ${hltvResult.rating.toFixed(2)}</div>
+          </div>
+        `;
+      }
+      document.getElementById('modal-hltv-formula').innerHTML = formulaHtml || 'No data';
+      
+      document.getElementById('modal-flux-elo').textContent = '-';
+      document.getElementById('flux-elo-details').textContent = 'Calculating...';
+      
+      statsModal.classList.add('visible');
+      calculateFluxElo(playerData.steam_id);
+    }
+  }
 });
